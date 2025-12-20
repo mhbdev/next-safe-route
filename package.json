@@ -1,6 +1,6 @@
 {
-  "name": "next-safe-route",
-  "version": "0.0.20",
+  "name": "@mhbdev/next-safe-route",
+  "version": "0.0.30",
   "description": "A safer way to define route handlers in Next.js",
   "keywords": [
     "next",
@@ -12,20 +12,19 @@
     "next api route",
     "nextjs api route"
   ],
-  "homepage": "https://github.com/richardsolomou/next-safe-route#readme",
+  "homepage": "https://github.com/mhbdev/next-safe-route#readme",
   "bugs": {
-    "url": "https://github.com/richardsolomou/next-safe-route/issues",
+    "url": "https://github.com/mhbdev/next-safe-route/issues",
     "email": "richard@solomou.dev"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/richardsolomou/next-safe-route"
+    "url": "https://github.com/mhbdev/next-safe-route/next-safe-route"
   },
   "license": "MIT",
   "author": {
-    "name": "Richard Solomou",
-    "email": "richard@solomou.dev",
-    "url": "https://solomou.dev"
+    "name": "MonoBit",
+    "email": "1839491@gmail.com"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -51,6 +50,23 @@
       "prettier --write"
     ]
   },
+  "peerDependencies": {
+    "@sinclair/typebox": "^0.33.7",
+    "valibot": "^0.39.0",
+    "yup": "^1.4.0",
+    "zod": "^4.2.1"
+  },
+  "peerDependenciesMeta": {
+    "@sinclair/typebox": {
+      "optional": true
+    },
+    "valibot": {
+      "optional": true
+    },
+    "yup": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@sinclair/typebox": "^0.33.7",
     "@swc/core": "^1.5.29",
@@ -67,7 +83,7 @@
     "valibot": "^0.39.0",
     "vitest": "^1.6.0",
     "yup": "^1.4.0",
-    "zod": "^3.23.8"
+    "zod": "^4.2.1"
   },
   "packageManager": "pnpm@9.1.2",
   "engines": {

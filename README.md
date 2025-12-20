@@ -1,34 +1,34 @@
-<h1 align="center">next-safe-route</h1>
+<h1 align="center">@mhbdev/next-safe-route</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/next-safe-route"><img src="https://img.shields.io/npm/v/next-safe-route?style=for-the-badge&logo=npm" /></a>
+  <a href="https://www.npmjs.com/package/@mhbdev/next-safe-route"><img src="https://img.shields.io/npm/v/%40mhbdev%2Fnext-safe-route?style=for-the-badge&logo=npm" /></a>
   <a href="https://github.com/richardsolomou/next-safe-route/actions/workflows/test.yaml"><img src="https://img.shields.io/github/actions/workflow/status/richardsolomou/next-safe-route/test.yaml?style=for-the-badge&logo=vitest" /></a>
-  <a href="https://github.com/richardsolomou/next-safe-route/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/next-safe-route?style=for-the-badge" /></a>
+  <a href="https://github.com/richardsolomou/next-safe-route/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/%40mhbdev%2Fnext-safe-route?style=for-the-badge" /></a>
 </p>
 
-`next-safe-route` is a utility library for Next.js that provides type-safety and schema validation for [Route Handlers](https://nextjs.org/docs/app/building-your-application/routing/route-handlers)/API Routes.
+`next-safe-route` is a utility library for Next.js that provides type-safety and schema validation for [Route Handlers](https://nextjs.org/docs/app/building-your-application/routing/route-handlers)/API Routes. It is compatible with Next.js 15+ (including 16) route handler signatures.
 
 ## Features
 
-- **✅ Schema Validation:** Automatically validate request parameters, query strings, and body content with built-in error handling.
-- **🧷 Type-Safe:** Work with full TypeScript type safety for parameters, query strings, and body content.
-- **😌 Easy to Use:** Simple and intuitive API that makes defining route handlers a breeze.
-- **🔗 Extensible:** Compatible with any validation library supported by [TypeSchema](https://typeschema.com).
+- **✅ Schema Validation:** Automatically validate request parameters, query strings, and body content with built-in JSON error responses.
+- **🧷 Type-Safe:** Work with full TypeScript type safety for parameters, query strings, and body content, including transformation results.
+- **🔗 Adapter-Friendly:** Ships with a zod (v4+) adapter by default and exports adapters for valibot and yup.
+- **📦 Next-Ready:** Matches the Next.js Route Handler signature (including Next 15/16) and supports middleware-style context extensions.
 - **🧪 Fully Tested:** Extensive test suite to ensure everything works reliably.
 
 ## Installation
 
 ```sh
-npm install next-safe-route
+npm install @mhbdev/next-safe-route zod
 ```
 
-The library natively works with [zod](https://zod.dev) for schema validation, but you can use any other validation library that is supported by [TypeSchema](https://typeschema.com), as long as you install its respective adapter.
+The library uses [zod](https://zod.dev) v4+ by default. If you want to use another validation library supported by [TypeSchema](https://typeschema.com), install it alongside this package and pass its adapter to `createSafeRoute`.
 
 ## Usage
 
 ```ts
 // app/api/hello/route.ts
-import { createSafeRoute } from 'next-safe-route';
+import { createSafeRoute } from '@mhbdev/next-safe-route';
 import { z } from 'zod';
 
 const paramsSchema = z.object({
@@ -52,7 +52,7 @@ export const GET = createSafeRoute()
     const { search } = context.query;
     const { field } = context.body;
 
-    return Response.json({ id, search, field }), { status: 200 };
+    return Response.json({ id, search, field }, { status: 200 });
   });
 ```
 
@@ -61,7 +61,28 @@ To define a route handler in Next.js:
 1. Import `createSafeRoute` and your validation library (e.g., `zod`).
 2. Define validation schemas for params, query, and body as needed.
 3. Use `createSafeRoute()` to create a route handler, chaining `params`, `query`, and `body` methods.
-4. Implement your handler function, accessing validated and type-safe params, query, and body through `context`.
+4. Implement your handler function, accessing validated and type-safe params, query, and body through `context`. Body validation expects `Content-Type: application/json`.
+
+### Using other validation libraries
+
+The package exports adapters so you can bring your own schema library:
+
+```ts
+import { createSafeRoute, valibotAdapter } from '@mhbdev/next-safe-route';
+import { object, string } from 'valibot';
+
+const querySchema = object({
+  search: string(),
+});
+
+export const GET = createSafeRoute({
+  validationAdapter: valibotAdapter(),
+})
+  .query(querySchema)
+  .handler((request, context) => {
+    return Response.json({ search: context.query.search });
+  });
+```
 
 ## Tests
 

@@ -15,6 +15,15 @@ const bodySchema = z.object({
   field: z.string(),
 });
 
+const transformedQuerySchema = z.object({
+  page: z
+    .union([z.number(), z.string()])
+    .transform((value) => Number(value))
+    .optional(),
+});
+
+const emptyParamsContext = { params: {} as Record<string, string | string[]> };
+
 describe('params validation', () => {
   it('should validate and handle valid params', async () => {
     const GET = createSafeRoute()
@@ -46,6 +55,7 @@ describe('params validation', () => {
 
     expect(response.status).toBe(400);
     expect(data.message).toBe('Invalid params');
+    expect(Array.isArray(data.issues)).toBe(true);
   });
 });
 
@@ -59,7 +69,7 @@ describe('query validation', () => {
       });
 
     const request = new Request('http://localhost/?search=test');
-    const response = await GET(request);
+    const response = await GET(request, emptyParamsContext);
     const data = await response.json();
 
     expect(response.status).toBe(200);
@@ -75,11 +85,12 @@ describe('query validation', () => {
       });
 
     const request = new Request('http://localhost/?search=');
-    const response = await GET(request);
+    const response = await GET(request, emptyParamsContext);
     const data = await response.json();
 
     expect(response.status).toBe(400);
     expect(data.message).toBe('Invalid query');
+    expect(Array.isArray(data.issues)).toBe(true);
   });
 });
 
@@ -95,8 +106,9 @@ describe('body validation', () => {
     const request = new Request('http://localhost/', {
       method: 'POST',
       body: JSON.stringify({ field: 'test-field' }),
+      headers: { 'content-type': 'application/json' },
     });
-    const response = await POST(request);
+    const response = await POST(request, emptyParamsContext);
     const data = await response.json();
 
     expect(response.status).toBe(200);
@@ -114,12 +126,14 @@ describe('body validation', () => {
     const request = new Request('http://localhost/', {
       method: 'POST',
       body: JSON.stringify({ field: 123 }),
+      headers: { 'content-type': 'application/json' },
     });
-    const response = await POST(request);
+    const response = await POST(request, emptyParamsContext);
     const data = await response.json();
 
     expect(response.status).toBe(400);
     expect(data.message).toBe('Invalid body');
+    expect(Array.isArray(data.issues)).toBe(true);
   });
 });
 
@@ -140,6 +154,7 @@ describe('combined validation', () => {
     const request = new Request('http://localhost/?search=test', {
       method: 'POST',
       body: JSON.stringify({ field: 'test-field' }),
+      headers: { 'content-type': 'application/json' },
     });
 
     const response = await POST(request, { params: { id: '550e8400-e29b-41d4-a716-446655440000' } });
@@ -169,6 +184,7 @@ describe('combined validation', () => {
     const request = new Request('http://localhost/?search=test', {
       method: 'POST',
       body: JSON.stringify({ field: 'test-field' }),
+      headers: { 'content-type': 'application/json' },
     });
 
     const response = await POST(request, { params: { id: 'invalid-uuid' } });
@@ -194,6 +210,7 @@ describe('combined validation', () => {
     const request = new Request('http://localhost/?search=', {
       method: 'POST',
       body: JSON.stringify({ field: 'test-field' }),
+      headers: { 'content-type': 'application/json' },
     });
 
     const response = await POST(request, { params: { id: '550e8400-e29b-41d4-a716-446655440000' } });
@@ -219,6 +236,7 @@ describe('combined validation', () => {
     const request = new Request('http://localhost/?search=test', {
       method: 'POST',
       body: JSON.stringify({ field: 123 }),
+      headers: { 'content-type': 'application/json' },
     });
 
     const response = await POST(request, { params: { id: '550e8400-e29b-41d4-a716-446655440000' } });
@@ -227,7 +245,9 @@ describe('combined validation', () => {
     expect(response.status).toBe(400);
     expect(data.message).toBe('Invalid body');
   });
+});
 
+describe('middlewares', () => {
   it('should execute middleware and add context properties', async () => {
     const middleware = async () => {
       return { user: { id: 'user-123', role: 'admin' } };
@@ -285,7 +305,9 @@ describe('combined validation', () => {
       permissions: ['read', 'write'],
     });
   });
+});
 
+describe('error handling', () => {
   it('should handle server errors using handleServerError method', async () => {
     class CustomError extends Error {
       constructor(message: string) {
@@ -315,5 +337,77 @@ describe('combined validation', () => {
 
     expect(response.status).toBe(400);
     expect(data).toEqual({ message: 'CustomError', details: 'Test error' });
+  });
+
+  it('should return a 500 error by default when the handler throws', async () => {
+    const GET = createSafeRoute()
+      .params(paramsSchema)
+      .handler(() => {
+        throw new Error('Boom');
+      });
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, { params: { id: '550e8400-e29b-41d4-a716-446655440000' } });
+    const data = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(data.message).toBe('Internal server error');
+  });
+});
+
+describe('body parsing', () => {
+  it('should not parse the body when no body schema is provided', async () => {
+    const POST = createSafeRoute().handler(() => {
+      return Response.json({ ok: true }, { status: 200 });
+    });
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.ok).toBe(true);
+  });
+
+  it('should reject non-JSON bodies when a body schema is provided', async () => {
+    const POST = createSafeRoute()
+      .body(bodySchema)
+      .handler((request, context) => {
+        const field = context.body.field;
+        return Response.json({ field }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: 'plain-text-body',
+      headers: { 'content-type': 'text/plain' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.message).toBe('Unsupported content type. Expected application/json.');
+  });
+});
+
+describe('schema transformations', () => {
+  it('should return transformed values from validation', async () => {
+    const GET = createSafeRoute()
+      .query(transformedQuerySchema)
+      .handler((request, context) => {
+        return Response.json(context.query, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/?page=2');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.page).toBe(2);
+    expect(typeof data.page).toBe('number');
   });
 });

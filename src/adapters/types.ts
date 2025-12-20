@@ -8,14 +8,14 @@ import type { z } from 'zod';
 export type IfInstalled<T> = any extends T ? never : T;
 
 export type Schema =
-  | IfInstalled<z.ZodType>
+  | IfInstalled<z.ZodTypeAny>
   | IfInstalled<GenericSchema>
   | IfInstalled<GenericSchemaAsync>
   | IfInstalled<YupSchema>
   | IfInstalled<TSchema>;
 
 export type Infer<S extends Schema> =
-  S extends IfInstalled<z.ZodType>
+  S extends IfInstalled<z.ZodTypeAny>
     ? z.infer<S>
     : S extends IfInstalled<GenericSchema>
       ? InferOutput<S>
@@ -28,7 +28,7 @@ export type Infer<S extends Schema> =
             : never;
 
 export type InferIn<S extends Schema> =
-  S extends IfInstalled<z.ZodType>
+  S extends IfInstalled<z.ZodTypeAny>
     ? z.input<S>
     : S extends IfInstalled<GenericSchema>
       ? InferInput<S>
@@ -59,7 +59,7 @@ export interface ValidationAdapter {
     data: unknown,
   ): Promise<{ success: true; data: Infer<S> } | { success: false; issues: ValidationIssue[] }>;
   // zod
-  validate<S extends IfInstalled<z.ZodType>>(
+  validate<S extends IfInstalled<z.ZodTypeAny>>(
     schema: S,
     data: unknown,
   ): Promise<{ success: true; data: Infer<S> } | { success: false; issues: ValidationIssue[] }>;
