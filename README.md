@@ -12,7 +12,7 @@
 
 - **✅ Schema Validation:** Automatically validate request parameters, query strings, and body content with built-in JSON error responses.
 - **🧷 Type-Safe:** Work with full TypeScript type safety for parameters, query strings, and body content, including transformation results.
-- **🔗 Adapter-Friendly:** Ships with a zod (v4+) adapter by default and exports adapters for valibot and yup.
+- **🔗 Adapter-Friendly:** Ships with a zod (v4+) adapter by default and lazily loads optional adapters for valibot and yup.
 - **📦 Next-Ready:** Matches the Next.js Route Handler signature (including Next 15/16) and supports middleware-style context extensions.
 - **🧪 Fully Tested:** Extensive test suite to ensure everything works reliably.
 
@@ -22,7 +22,17 @@
 npm install @mhbdev/next-safe-route zod
 ```
 
-The library uses [zod](https://zod.dev) v4+ by default. If you want to use another validation library supported by [TypeSchema](https://typeschema.com), install it alongside this package and pass its adapter to `createSafeRoute`.
+The library uses [zod](https://zod.dev) v4+ by default. Adapters for [valibot](https://valibot.dev) and [yup](https://github.com/jquense/yup) are optional and lazy-loaded. Install them only if you plan to use them:
+
+```sh
+# valibot
+npm install valibot
+
+# yup
+npm install yup
+```
+
+If an optional adapter is invoked without its peer dependency installed, a clear error message will explain what to install.
 
 ## Usage
 
@@ -65,10 +75,11 @@ To define a route handler in Next.js:
 
 ### Using other validation libraries
 
-The package exports adapters so you can bring your own schema library:
+The package exports adapters so you can bring your own schema library. Optional adapters can be imported from the main entry or their own subpaths to avoid pulling in unused code:
 
 ```ts
-import { createSafeRoute, valibotAdapter } from '@mhbdev/next-safe-route';
+import { createSafeRoute } from '@mhbdev/next-safe-route';
+import { valibotAdapter } from '@mhbdev/next-safe-route/valibot';
 import { object, string } from 'valibot';
 
 const querySchema = object({

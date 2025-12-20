@@ -17,12 +17,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 import type { Schema as YupSchema } from 'yup';
-import { ValidationError } from 'yup';
 
 import type { IfInstalled, Infer, ValidationAdapter, ValidationIssue } from './types';
 
+type YupModule = typeof import('yup');
+
+async function loadYup(): Promise<YupModule> {
+  try {
+    return await import('yup');
+  } catch (error) {
+    throw new Error('yupAdapter requires optional peer dependency "yup". Install it with `npm install yup`.', {
+      cause: error instanceof Error ? error : undefined,
+    });
+  }
+}
+
 class YupAdapter implements ValidationAdapter {
   async validate<S extends IfInstalled<YupSchema>>(schema: S, data: unknown) {
+    const yup = await loadYup();
+
     try {
       const result = await schema.validate(data, { strict: true });
 
@@ -31,7 +44,7 @@ class YupAdapter implements ValidationAdapter {
         data: result as Infer<S>,
       } as const;
     } catch (e) {
-      if (e instanceof ValidationError) {
+      if (e instanceof yup.ValidationError) {
         const { message, path } = e;
 
         return {

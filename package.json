@@ -29,6 +29,24 @@
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./valibot": {
+      "import": "./dist/valibot.mjs",
+      "require": "./dist/valibot.js",
+      "types": "./dist/valibot.d.ts"
+    },
+    "./yup": {
+      "import": "./dist/yup.mjs",
+      "require": "./dist/yup.js",
+      "types": "./dist/yup.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],

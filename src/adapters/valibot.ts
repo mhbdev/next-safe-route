@@ -16,13 +16,27 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-import { type GenericSchema, type GenericSchemaAsync, getDotPath, safeParseAsync } from 'valibot';
+import type { GenericSchema, GenericSchemaAsync } from 'valibot';
 
 import type { IfInstalled, Infer, ValidationAdapter } from './types';
 
+type ValibotModule = typeof import('valibot');
+
+async function loadValibot(): Promise<ValibotModule> {
+  try {
+    return await import('valibot');
+  } catch (error) {
+    throw new Error(
+      'valibotAdapter requires optional peer dependency "valibot". Install it with `npm install valibot`.',
+      { cause: error instanceof Error ? error : undefined },
+    );
+  }
+}
+
 class ValibotAdapter implements ValidationAdapter {
   async validate<S extends IfInstalled<GenericSchema | GenericSchemaAsync>>(schema: S, data: unknown) {
-    const result = await safeParseAsync(schema, data);
+    const valibot = await loadValibot();
+    const result = await valibot.safeParseAsync(schema, data);
 
     if (result.success) {
       return {
@@ -35,7 +49,7 @@ class ValibotAdapter implements ValidationAdapter {
       success: false,
       issues: result.issues.map((issue) => ({
         message: issue.message,
-        path: getDotPath(issue)?.split('.'),
+        path: valibot.getDotPath(issue)?.split('.'),
       })),
     } as const;
   }
