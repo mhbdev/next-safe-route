@@ -1,11 +1,13 @@
 import { Infer, Schema } from './adapters/types';
 
+type Awaitable<T> = T | Promise<T>;
+
 export type InferMaybe<TSchema extends Schema | undefined> = TSchema extends Schema
   ? Infer<TSchema>
   : Record<string, unknown>;
 
 export type RouteContext<TRawParams extends Record<string, unknown> = Record<string, string | string[]>> = {
-  params: TRawParams;
+  params: Awaitable<TRawParams>;
 };
 
 export type HandlerFunction<TParams, TQuery, TBody, TContext> = (

@@ -41,6 +41,21 @@ describe('params validation', () => {
     expect(data).toEqual({ id: '550e8400-e29b-41d4-a716-446655440000' });
   });
 
+  it('should resolve promise-based params (Next 16 compatibility)', async () => {
+    const GET = createSafeRoute()
+      .params(paramsSchema)
+      .handler((request, context) => Response.json({ id: context.params.id }, { status: 200 }));
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, {
+      params: Promise.resolve({ id: '550e8400-e29b-41d4-a716-446655440000' }),
+    });
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ id: '550e8400-e29b-41d4-a716-446655440000' });
+  });
+
   it('should return an error for invalid params', async () => {
     const GET = createSafeRoute()
       .params(paramsSchema)

@@ -103,7 +103,7 @@ export class RouteHandlerBuilder<
     return async (request, context): Promise<Response> => {
       try {
         const routeContext = context ?? ({ params: {} } as RouteContext);
-        const paramsInput = routeContext.params ?? {};
+        const paramsInput = await this.resolveParams(routeContext.params);
         const queryInput = this.getQueryParams(request);
         const bodyInput = await this.parseRequestBody(request);
 
@@ -146,6 +146,11 @@ export class RouteHandlerBuilder<
         return this.buildErrorResponse('Internal server error', undefined, 500);
       }
     };
+  }
+
+  private async resolveParams(params: RouteContext['params'] | undefined) {
+    const resolvedParams = await Promise.resolve(params ?? {});
+    return (resolvedParams ?? {}) as Record<string, unknown>;
   }
 
   private async validateInput<S extends Schema | undefined>(
