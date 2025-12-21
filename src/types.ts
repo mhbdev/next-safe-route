@@ -1,4 +1,4 @@
-import { Infer, Schema } from './adapters/types';
+import { Infer, Schema, ValidationIssue } from './adapters/types';
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -18,3 +18,5 @@ export type HandlerFunction<TParams, TQuery, TBody, TContext> = (
 export type OriginalRouteHandler = (request: Request, context: RouteContext) => Response | Promise<Response>;
 
 export type HandlerServerErrorFn = (error: Error) => Response;
+
+export type ValidationErrorHandler = (issues: ValidationIssue[]) => Response;

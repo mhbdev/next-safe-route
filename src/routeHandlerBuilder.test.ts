@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createSafeRoute } from '.';
+import { ValidationIssue, createSafeRoute } from '.';
 
 const paramsSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
 });
 
 const querySchema = z.object({
@@ -106,6 +106,25 @@ describe('query validation', () => {
     expect(response.status).toBe(400);
     expect(data.message).toBe('Invalid query');
     expect(Array.isArray(data.issues)).toBe(true);
+  });
+
+  it('should handle array query parameters', async () => {
+    const arrayQuerySchema = z.object({
+      tags: z.array(z.string()),
+    });
+
+    const GET = createSafeRoute()
+      .query(arrayQuerySchema)
+      .handler((request, context) => {
+        return Response.json({ tags: context.query.tags }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/?tags=a&tags=b');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ tags: ['a', 'b'] });
   });
 });
 
@@ -320,6 +339,25 @@ describe('middlewares', () => {
       permissions: ['read', 'write'],
     });
   });
+
+  it('should stop execution if middleware returns a Response', async () => {
+    const middleware = async () => {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    };
+
+    const GET = createSafeRoute()
+      .use(middleware)
+      .handler(() => {
+        return Response.json({ ok: true }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(data).toEqual({ error: 'Unauthorized' });
+  });
 });
 
 describe('error handling', () => {
@@ -405,7 +443,33 @@ describe('body parsing', () => {
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.message).toBe('Unsupported content type. Expected application/json.');
+    expect(response.status).toBe(400);
+    expect(data.message).toBe(
+      'Unsupported content type. Expected application/json, multipart/form-data, or application/x-www-form-urlencoded.',
+    );
+  });
+
+  it('should parse and validate FormData body', async () => {
+    const POST = createSafeRoute()
+      .body(bodySchema)
+      .handler((request, context) => {
+        const field = context.body.field;
+        return Response.json({ field }, { status: 200 });
+      });
+
+    const formData = new FormData();
+    formData.append('field', 'form-field-value');
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ field: 'form-field-value' });
   });
 });
 
@@ -424,5 +488,40 @@ describe('schema transformations', () => {
     expect(response.status).toBe(200);
     expect(data.page).toBe(2);
     expect(typeof data.page).toBe('number');
+  });
+});
+
+describe('custom validation error handler', () => {
+  it('should use custom validation error handler when provided', async () => {
+    const validationErrorHandler = (issues: ValidationIssue[]) => {
+      return new Response(
+        JSON.stringify({
+          error: 'Validation Failed',
+          details: issues.map((i) => ({ path: i.path, message: i.message })),
+        }),
+        { status: 422 },
+      );
+    };
+
+    const POST = createSafeRoute({
+      validationErrorHandler,
+    })
+      .body(bodySchema)
+      .handler(() => {
+        return Response.json({ ok: true }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: JSON.stringify({ field: 123 }), // Invalid type
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(data.error).toBe('Validation Failed');
+    expect(Array.isArray(data.details)).toBe(true);
   });
 });

@@ -1,8 +1,15 @@
 import { Schema, ValidationAdapter, ValidationIssue } from './adapters/types';
 import { zodAdapter } from './adapters/zod';
-import { HandlerFunction, HandlerServerErrorFn, InferMaybe, OriginalRouteHandler, RouteContext } from './types';
+import {
+  HandlerFunction,
+  HandlerServerErrorFn,
+  InferMaybe,
+  OriginalRouteHandler,
+  RouteContext,
+  ValidationErrorHandler,
+} from './types';
 
-type Middleware<T = Record<string, unknown>> = (request: Request) => Promise<T>;
+type Middleware<T = Record<string, unknown>> = (request: Request) => Promise<T | Response>;
 
 type BuilderConfig<
   TParams extends Schema | undefined,
@@ -30,6 +37,7 @@ export class RouteHandlerBuilder<
   private config: BuilderConfig<TParams, TQuery, TBody>;
   private middlewares: Middleware[];
   private handleServerError?: HandlerServerErrorFn;
+  private validationErrorHandler?: ValidationErrorHandler;
   private validationAdapter: ValidationAdapter;
   private baseContext: TContext;
 
@@ -42,17 +50,20 @@ export class RouteHandlerBuilder<
     validationAdapter = zodAdapter(),
     middlewares = [],
     handleServerError,
+    validationErrorHandler,
     baseContext,
   }: {
     config?: BuilderConfig<TParams, TQuery, TBody>;
     middlewares?: Middleware[];
     handleServerError?: HandlerServerErrorFn;
+    validationErrorHandler?: ValidationErrorHandler;
     validationAdapter?: ValidationAdapter;
     baseContext?: TContext;
   }) {
     this.config = config;
     this.middlewares = middlewares;
     this.handleServerError = handleServerError;
+    this.validationErrorHandler = validationErrorHandler;
     this.validationAdapter = validationAdapter;
     this.baseContext = (baseContext ?? {}) as TContext;
   }
@@ -62,6 +73,7 @@ export class RouteHandlerBuilder<
       config: { ...this.config, paramsSchema: schema },
       middlewares: this.middlewares,
       handleServerError: this.handleServerError,
+      validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
     });
@@ -72,6 +84,7 @@ export class RouteHandlerBuilder<
       config: { ...this.config, querySchema: schema },
       middlewares: this.middlewares,
       handleServerError: this.handleServerError,
+      validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
     });
@@ -82,6 +95,7 @@ export class RouteHandlerBuilder<
       config: { ...this.config, bodySchema: schema },
       middlewares: this.middlewares,
       handleServerError: this.handleServerError,
+      validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
     });
@@ -92,6 +106,7 @@ export class RouteHandlerBuilder<
       config: this.config,
       middlewares: [...this.middlewares, middleware],
       handleServerError: this.handleServerError,
+      validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext as unknown as TContext & TReturnType,
     });
@@ -125,7 +140,10 @@ export class RouteHandlerBuilder<
         let middlewareContext: TContext = { ...this.baseContext };
         for (const middleware of this.middlewares) {
           const result = await middleware(request);
-          middlewareContext = { ...middlewareContext, ...result };
+          if (result instanceof Response) {
+            return result;
+          }
+          middlewareContext = { ...middlewareContext, ...(result as TContext) };
         }
 
         return handler(request, {
@@ -167,12 +185,24 @@ export class RouteHandlerBuilder<
       return { success: true, data: result.data as InferMaybe<S> };
     }
 
+    if (this.validationErrorHandler) {
+      return { success: false, response: this.validationErrorHandler(result.issues) };
+    }
+
     return { success: false, response: this.buildErrorResponse(errorMessage, result.issues) };
   }
 
   private getQueryParams(request: Request) {
     const url = new URL(request.url);
-    return Object.fromEntries(url.searchParams.entries());
+    const params: Record<string, unknown> = {};
+    const keys = Array.from(new Set(url.searchParams.keys()));
+
+    for (const key of keys) {
+      const values = url.searchParams.getAll(key);
+      params[key] = values.length === 1 ? values[0] : values;
+    }
+
+    return params;
   }
 
   private async parseRequestBody(request: Request): Promise<unknown> {
@@ -181,21 +211,41 @@ export class RouteHandlerBuilder<
     }
 
     const contentType = request.headers.get('content-type') ?? '';
-    const rawBody = await request.text();
 
-    if (rawBody.length === 0) {
-      return {};
+    if (contentType.includes('application/json')) {
+      const rawBody = await request.text();
+
+      if (rawBody.length === 0) {
+        return {};
+      }
+
+      try {
+        return JSON.parse(rawBody);
+      } catch (error) {
+        throw new BodyParsingError('Invalid JSON body.');
+      }
     }
 
-    if (!contentType.includes('application/json')) {
-      throw new BodyParsingError('Unsupported content type. Expected application/json.');
+    if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+      try {
+        const formData = await request.formData();
+        const data: Record<string, unknown> = {};
+        const keys = Array.from(new Set(formData.keys()));
+
+        for (const key of keys) {
+          const values = formData.getAll(key);
+          data[key] = values.length === 1 ? values[0] : values;
+        }
+
+        return data;
+      } catch (error) {
+        throw new BodyParsingError('Invalid Form Data.');
+      }
     }
 
-    try {
-      return JSON.parse(rawBody);
-    } catch (error) {
-      throw new BodyParsingError('Invalid JSON body.');
-    }
+    throw new BodyParsingError(
+      'Unsupported content type. Expected application/json, multipart/form-data, or application/x-www-form-urlencoded.',
+    );
   }
 
   private buildErrorResponse(message: string, issues?: ValidationIssue[], status = 400) {
