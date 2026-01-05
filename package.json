@@ -72,7 +72,7 @@
     "@sinclair/typebox": "^0.33.7",
     "valibot": "^0.39.0",
     "yup": "^1.4.0",
-    "zod": "^4.2.1"
+    "zod": "^4.3.5"
   },
   "peerDependenciesMeta": {
     "@sinclair/typebox": {
