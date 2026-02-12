@@ -92,6 +92,38 @@ const GET = createSafeRoute({
   });
 ```
 
+### Parser options
+
+You can customize query/body parsing behavior with `parserOptions`:
+
+- `parserOptions.query.arrayStrategy`: `'auto' | 'always' | 'never'` (default: `'auto'`)
+- `parserOptions.query.coerce`: `'none' | 'primitive' | ((value, key) => unknown)` (default: `'none'`)
+- `parserOptions.body.strictContentType`: `boolean` (default: `true`)
+- `parserOptions.body.allowEmptyBody`: `boolean` (default: `true`)
+- `parserOptions.body.emptyValue`: value used when empty body is allowed (default: `{}`)
+- `parserOptions.body.coerce`: `'none' | 'primitive' | ((value, key) => unknown)` for form/text values
+
+```ts
+const POST = createSafeRoute({
+  parserOptions: {
+    query: {
+      arrayStrategy: 'always',
+      coerce: 'primitive',
+    },
+    body: {
+      strictContentType: false,
+      allowEmptyBody: false,
+      coerce: 'primitive',
+    },
+  },
+})
+  .query(z.object({ page: z.array(z.number()) }))
+  .body(z.object({ count: z.number() }))
+  .handler((request, context) => {
+    return Response.json({ query: context.query, body: context.body });
+  });
+```
+
 ### Using other validation libraries
 
 The package exports adapters so you can bring your own schema library. Optional adapters can be imported from the main entry or their own subpaths to avoid pulling in unused code:

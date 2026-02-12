@@ -1,12 +1,17 @@
 import { Schema, ValidationAdapter, ValidationIssue } from './adapters/types';
 import { zodAdapter } from './adapters/zod';
 import {
+  BodyFallbackStrategy,
   HandlerFunction,
   HandlerServerErrorFn,
   InferMaybe,
   OriginalRouteHandler,
+  ParserOptions,
+  QueryArrayStrategy,
+  QuerySingleValueStrategy,
   RouteContext,
   ValidationErrorHandler,
+  ValueCoercion,
 } from './types';
 
 type Awaitable<T> = T | Promise<T>;
@@ -17,6 +22,46 @@ type Middleware<
 > = (request: Request, data: TContext) => Awaitable<TReturn | Response>;
 
 type AnyMiddleware = Middleware<Record<string, unknown>, Record<string, unknown>>;
+
+type NormalizedParserOptions = {
+  query: {
+    arrayStrategy: QueryArrayStrategy;
+    singleValueStrategy: QuerySingleValueStrategy;
+    coerce: ValueCoercion;
+  };
+  body: {
+    strictContentType: boolean;
+    allowEmptyBody: boolean;
+    hasEmptyValue: boolean;
+    emptyValue: unknown;
+    coerce: ValueCoercion;
+    fallbackStrategy: BodyFallbackStrategy;
+    arrayStrategy: QueryArrayStrategy;
+    singleValueStrategy: QuerySingleValueStrategy;
+  };
+};
+
+function normalizeParserOptions(parserOptions?: ParserOptions): NormalizedParserOptions {
+  const bodyOptions = parserOptions?.body;
+
+  return {
+    query: {
+      arrayStrategy: parserOptions?.query?.arrayStrategy ?? 'auto',
+      singleValueStrategy: parserOptions?.query?.singleValueStrategy ?? 'last',
+      coerce: parserOptions?.query?.coerce ?? 'none',
+    },
+    body: {
+      strictContentType: bodyOptions?.strictContentType ?? true,
+      allowEmptyBody: bodyOptions?.allowEmptyBody ?? true,
+      hasEmptyValue: Boolean(bodyOptions && 'emptyValue' in bodyOptions),
+      emptyValue: bodyOptions?.emptyValue,
+      coerce: bodyOptions?.coerce ?? 'none',
+      fallbackStrategy: bodyOptions?.fallbackStrategy ?? 'json-first',
+      arrayStrategy: bodyOptions?.arrayStrategy ?? 'auto',
+      singleValueStrategy: bodyOptions?.singleValueStrategy ?? 'last',
+    },
+  };
+}
 
 type BuilderConfig<
   TParams extends Schema | undefined,
@@ -47,6 +92,8 @@ export class RouteHandlerBuilder<
   private validationErrorHandler?: ValidationErrorHandler;
   private validationAdapter: ValidationAdapter;
   private baseContext: TContext;
+  private parserOptions: NormalizedParserOptions;
+  private parserOptionsInput?: ParserOptions;
 
   constructor({
     config = {
@@ -59,6 +106,7 @@ export class RouteHandlerBuilder<
     handleServerError,
     validationErrorHandler,
     baseContext,
+    parserOptions,
   }: {
     config?: BuilderConfig<TParams, TQuery, TBody>;
     middlewares?: AnyMiddleware[];
@@ -66,6 +114,7 @@ export class RouteHandlerBuilder<
     validationErrorHandler?: ValidationErrorHandler;
     validationAdapter?: ValidationAdapter;
     baseContext?: TContext;
+    parserOptions?: ParserOptions;
   }) {
     this.config = config;
     this.middlewares = middlewares;
@@ -73,6 +122,8 @@ export class RouteHandlerBuilder<
     this.validationErrorHandler = validationErrorHandler;
     this.validationAdapter = validationAdapter;
     this.baseContext = (baseContext ?? {}) as TContext;
+    this.parserOptionsInput = parserOptions;
+    this.parserOptions = normalizeParserOptions(parserOptions);
   }
 
   params<T extends Schema>(schema: T): RouteHandlerBuilder<T, TQuery, TBody, TContext> {
@@ -83,6 +134,7 @@ export class RouteHandlerBuilder<
       validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
+      parserOptions: this.parserOptionsInput,
     });
   }
 
@@ -94,6 +146,7 @@ export class RouteHandlerBuilder<
       validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
+      parserOptions: this.parserOptionsInput,
     });
   }
 
@@ -105,6 +158,7 @@ export class RouteHandlerBuilder<
       validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext,
+      parserOptions: this.parserOptionsInput,
     });
   }
 
@@ -116,6 +170,7 @@ export class RouteHandlerBuilder<
       validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
       baseContext: this.baseContext as unknown as TContext & TReturnType,
+      parserOptions: this.parserOptionsInput,
     });
   }
 
@@ -203,13 +258,102 @@ export class RouteHandlerBuilder<
     const url = new URL(request.url);
     const params: Record<string, unknown> = {};
     const keys = Array.from(new Set(url.searchParams.keys()));
+    const { arrayStrategy, singleValueStrategy, coerce } = this.parserOptions.query;
 
     for (const key of keys) {
       const values = url.searchParams.getAll(key);
-      params[key] = values.length === 1 ? values[0] : values;
+      const coercedValues = values.map((value) => this.coerceStringValue(value, key, coerce));
+      params[key] = this.selectValues(coercedValues, arrayStrategy, singleValueStrategy);
     }
 
     return params;
+  }
+
+  private selectValues(
+    values: unknown[],
+    arrayStrategy: QueryArrayStrategy,
+    singleValueStrategy: QuerySingleValueStrategy,
+  ): unknown {
+    if (arrayStrategy === 'always') {
+      return values;
+    }
+
+    if (arrayStrategy === 'never') {
+      return this.pickSingleValue(values, singleValueStrategy);
+    }
+
+    return values.length === 1 ? values[0] : values;
+  }
+
+  private pickSingleValue(values: unknown[], strategy: QuerySingleValueStrategy): unknown {
+    if (values.length === 0) {
+      return undefined;
+    }
+
+    return strategy === 'first' ? values[0] : values[values.length - 1];
+  }
+
+  private coerceStringValue(value: string, key: string, coercion: ValueCoercion): unknown {
+    if (typeof coercion === 'function') {
+      return coercion(value, key);
+    }
+
+    if (coercion === 'primitive') {
+      return this.coercePrimitiveValue(value);
+    }
+
+    return value;
+  }
+
+  private coercePrimitiveValue(value: string): unknown {
+    const trimmed = value.trim();
+
+    if (trimmed === 'true') {
+      return true;
+    }
+
+    if (trimmed === 'false') {
+      return false;
+    }
+
+    if (trimmed === 'null') {
+      return null;
+    }
+
+    if (/^-?(?:\d+|\d*\.\d+)$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+
+    return value;
+  }
+
+  private parseFormData(
+    formData: FormData,
+    arrayStrategy: QueryArrayStrategy,
+    singleValueStrategy: QuerySingleValueStrategy,
+    coercion: ValueCoercion,
+  ): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    const keys = Array.from(new Set(formData.keys()));
+
+    for (const key of keys) {
+      const values = formData
+        .getAll(key)
+        .map((value) => (typeof value === 'string' ? this.coerceStringValue(value, key, coercion) : value));
+      data[key] = this.selectValues(values, arrayStrategy, singleValueStrategy);
+    }
+
+    return data;
+  }
+
+  private resolveEmptyBody() {
+    const { allowEmptyBody, hasEmptyValue, emptyValue } = this.parserOptions.body;
+
+    if (allowEmptyBody) {
+      return hasEmptyValue ? emptyValue : {};
+    }
+
+    throw new BodyParsingError('Request body is required.');
   }
 
   private async parseRequestBody(request: Request): Promise<unknown> {
@@ -217,13 +361,13 @@ export class RouteHandlerBuilder<
       return {};
     }
 
-    const contentType = request.headers.get('content-type') ?? '';
+    const contentType = (request.headers.get('content-type') ?? '').toLowerCase();
 
     if (contentType.includes('application/json')) {
       const rawBody = await request.text();
 
       if (rawBody.length === 0) {
-        return {};
+        return this.resolveEmptyBody();
       }
 
       try {
@@ -236,12 +380,11 @@ export class RouteHandlerBuilder<
     if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
       try {
         const formData = await request.formData();
-        const data: Record<string, unknown> = {};
-        const keys = Array.from(new Set(formData.keys()));
+        const { arrayStrategy, singleValueStrategy, coerce } = this.parserOptions.body;
+        const data = this.parseFormData(formData, arrayStrategy, singleValueStrategy, coerce);
 
-        for (const key of keys) {
-          const values = formData.getAll(key);
-          data[key] = values.length === 1 ? values[0] : values;
+        if (Object.keys(data).length === 0) {
+          return this.resolveEmptyBody();
         }
 
         return data;
@@ -250,9 +393,26 @@ export class RouteHandlerBuilder<
       }
     }
 
-    throw new BodyParsingError(
-      'Unsupported content type. Expected application/json, multipart/form-data, or application/x-www-form-urlencoded.',
-    );
+    if (this.parserOptions.body.strictContentType) {
+      throw new BodyParsingError(
+        'Unsupported content type. Expected application/json, multipart/form-data, or application/x-www-form-urlencoded.',
+      );
+    }
+
+    const rawBody = await request.text();
+    if (rawBody.length === 0) {
+      return this.resolveEmptyBody();
+    }
+
+    if (this.parserOptions.body.fallbackStrategy === 'text') {
+      return this.coerceStringValue(rawBody, 'body', this.parserOptions.body.coerce);
+    }
+
+    try {
+      return JSON.parse(rawBody);
+    } catch (error) {
+      return this.coerceStringValue(rawBody, 'body', this.parserOptions.body.coerce);
+    }
   }
 
   private buildErrorResponse(message: string, issues?: ValidationIssue[], status = 400) {

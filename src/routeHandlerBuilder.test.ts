@@ -126,6 +126,77 @@ describe('query validation', () => {
     expect(response.status).toBe(200);
     expect(data).toEqual({ tags: ['a', 'b'] });
   });
+
+  it('should support always-array query strategy', async () => {
+    const schema = z.object({
+      tag: z.array(z.string()),
+    });
+
+    const GET = createSafeRoute({
+      parserOptions: {
+        query: {
+          arrayStrategy: 'always',
+        },
+      },
+    })
+      .query(schema)
+      .handler((request, context) => Response.json(context.query, { status: 200 }));
+
+    const request = new Request('http://localhost/?tag=one');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ tag: ['one'] });
+  });
+
+  it('should support never-array query strategy', async () => {
+    const schema = z.object({
+      tag: z.string(),
+    });
+
+    const GET = createSafeRoute({
+      parserOptions: {
+        query: {
+          arrayStrategy: 'never',
+        },
+      },
+    })
+      .query(schema)
+      .handler((request, context) => Response.json(context.query, { status: 200 }));
+
+    const request = new Request('http://localhost/?tag=one&tag=two');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ tag: 'two' });
+  });
+
+  it('should coerce query values when primitive coercion is enabled', async () => {
+    const schema = z.object({
+      page: z.number(),
+      active: z.boolean(),
+      nothing: z.null(),
+    });
+
+    const GET = createSafeRoute({
+      parserOptions: {
+        query: {
+          coerce: 'primitive',
+        },
+      },
+    })
+      .query(schema)
+      .handler((request, context) => Response.json(context.query, { status: 200 }));
+
+    const request = new Request('http://localhost/?page=2&active=true&nothing=null');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ page: 2, active: true, nothing: null });
+  });
 });
 
 describe('body validation', () => {
@@ -491,6 +562,26 @@ describe('body parsing', () => {
     expect(data.ok).toBe(true);
   });
 
+  it('should keep default empty JSON body behavior when parser options are not configured', async () => {
+    const POST = createSafeRoute()
+      .body(z.object({}).strict())
+      .handler((request, context) => {
+        return Response.json({ body: context.body }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: '',
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ body: {} });
+  });
+
   it('should reject non-JSON bodies when a body schema is provided', async () => {
     const POST = createSafeRoute()
       .body(bodySchema)
@@ -536,6 +627,165 @@ describe('body parsing', () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual({ field: 'form-field-value' });
+  });
+
+  it('should coerce FormData body values when primitive coercion is enabled', async () => {
+    const schema = z.object({
+      count: z.number(),
+      enabled: z.boolean(),
+    });
+
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          coerce: 'primitive',
+        },
+      },
+    })
+      .body(schema)
+      .handler((request, context) => Response.json(context.body, { status: 200 }));
+
+    const formData = new FormData();
+    formData.append('count', '2');
+    formData.append('enabled', 'true');
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ count: 2, enabled: true });
+  });
+
+  it('should support body array strategy for FormData', async () => {
+    const schema = z.object({
+      tag: z.array(z.string()),
+    });
+
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          arrayStrategy: 'always',
+        },
+      },
+    })
+      .body(schema)
+      .handler((request, context) => Response.json(context.body, { status: 200 }));
+
+    const formData = new FormData();
+    formData.append('tag', 'one');
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ tag: ['one'] });
+  });
+
+  it('should support non-strict body parsing with JSON fallback', async () => {
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          strictContentType: false,
+        },
+      },
+    })
+      .body(bodySchema)
+      .handler((request, context) => Response.json(context.body, { status: 200 }));
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: JSON.stringify({ field: 'text-json' }),
+      headers: { 'content-type': 'text/plain' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ field: 'text-json' });
+  });
+
+  it('should support text fallback for non-strict body parsing', async () => {
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          strictContentType: false,
+          fallbackStrategy: 'text',
+        },
+      },
+    })
+      .body(z.string())
+      .handler((request, context) => Response.json({ value: context.body }, { status: 200 }));
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: 'raw-text',
+      headers: { 'content-type': 'text/plain' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ value: 'raw-text' });
+  });
+
+  it('should reject empty JSON body when allowEmptyBody is false', async () => {
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          allowEmptyBody: false,
+        },
+      },
+    })
+      .body(bodySchema)
+      .handler((request, context) => Response.json(context.body, { status: 200 }));
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: '',
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.message).toBe('Request body is required.');
+  });
+
+  it('should use configured empty body value', async () => {
+    const POST = createSafeRoute({
+      parserOptions: {
+        body: {
+          emptyValue: null,
+        },
+      },
+    })
+      .body(z.null())
+      .handler((request, context) => Response.json({ value: context.body }, { status: 200 }));
+
+    const request = new Request('http://localhost/', {
+      method: 'POST',
+      body: '',
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ value: null });
   });
 });
 

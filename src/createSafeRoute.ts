@@ -1,13 +1,14 @@
 import { ValidationAdapter } from './adapters/types';
 import { zodAdapter } from './adapters/zod';
 import { RouteHandlerBuilder } from './routeHandlerBuilder';
-import { HandlerServerErrorFn, ValidationErrorHandler } from './types';
+import { HandlerServerErrorFn, ParserOptions, ValidationErrorHandler } from './types';
 
 type CreateSafeRouteParams<TContext extends Record<string, unknown>> = {
   handleServerError?: HandlerServerErrorFn;
   validationErrorHandler?: ValidationErrorHandler;
   validationAdapter?: ValidationAdapter;
   baseContext?: TContext;
+  parserOptions?: ParserOptions;
 };
 
 export function createSafeRoute<TContext extends Record<string, unknown> = Record<string, unknown>>(
@@ -18,5 +19,6 @@ export function createSafeRoute<TContext extends Record<string, unknown> = Recor
     validationErrorHandler: params?.validationErrorHandler,
     validationAdapter: params?.validationAdapter ?? zodAdapter(),
     baseContext: params?.baseContext,
+    parserOptions: params?.parserOptions,
   });
 }

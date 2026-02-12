@@ -34,6 +34,7 @@ Collect these before generating code:
 3. Expected schema for `params`, `query`, and `body`.
 4. Desired validation/server error response shape.
 5. Middleware-derived context fields needed in `context.data`.
+6. Parser behavior overrides (query/body array strategy, coercion, strictness, empty-body rules).
 
 ## Decision Table
 
@@ -45,6 +46,7 @@ yup schemas | `createSafeRoute({ validationAdapter: yupAdapter() })`
 Custom schema error payload/status | `validationErrorHandler`
 Custom unexpected-error payload/status | `handleServerError`
 Auth or request-derived shared data | `.use(async (request, data) => ({ ... }))`
+Control query/body parsing behavior | `createSafeRoute({ parserOptions: { query: ..., body: ... } })`
 
 ## Workflow
 
@@ -108,7 +110,8 @@ export const GET = createSafeRoute()
   - `application/json`
   - `multipart/form-data`
   - `application/x-www-form-urlencoded`
-- For repeated query/body form keys, output arrays; single keys output scalars.
+- Default parser behavior uses scalar-or-array auto mode: repeated query/body form keys become arrays, single keys become scalars.
+- Parser behavior can be overridden with `parserOptions` (`arrayStrategy`, `coerce`, `strictContentType`, `allowEmptyBody`, `emptyValue`).
 - Supports Next.js 16 async params (`context.params` may be a Promise).
 
 ## Constraints and Gotchas
