@@ -9,7 +9,14 @@ import {
   ValidationErrorHandler,
 } from './types';
 
-type Middleware<T = Record<string, unknown>> = (request: Request) => Promise<T | Response>;
+type Awaitable<T> = T | Promise<T>;
+
+type Middleware<
+  TContext extends Record<string, unknown> = Record<string, unknown>,
+  TReturn extends Record<string, unknown> = Record<string, unknown>,
+> = (request: Request, data: TContext) => Awaitable<TReturn | Response>;
+
+type AnyMiddleware = Middleware<Record<string, unknown>, Record<string, unknown>>;
 
 type BuilderConfig<
   TParams extends Schema | undefined,
@@ -35,7 +42,7 @@ export class RouteHandlerBuilder<
   TContext extends Record<string, unknown> = Record<string, unknown>,
 > {
   private config: BuilderConfig<TParams, TQuery, TBody>;
-  private middlewares: Middleware[];
+  private middlewares: AnyMiddleware[];
   private handleServerError?: HandlerServerErrorFn;
   private validationErrorHandler?: ValidationErrorHandler;
   private validationAdapter: ValidationAdapter;
@@ -54,7 +61,7 @@ export class RouteHandlerBuilder<
     baseContext,
   }: {
     config?: BuilderConfig<TParams, TQuery, TBody>;
-    middlewares?: Middleware[];
+    middlewares?: AnyMiddleware[];
     handleServerError?: HandlerServerErrorFn;
     validationErrorHandler?: ValidationErrorHandler;
     validationAdapter?: ValidationAdapter;
@@ -101,10 +108,10 @@ export class RouteHandlerBuilder<
     });
   }
 
-  use<TReturnType extends Record<string, unknown>>(middleware: Middleware<TReturnType>) {
+  use<TReturnType extends Record<string, unknown>>(middleware: Middleware<TContext, TReturnType>) {
     return new RouteHandlerBuilder<TParams, TQuery, TBody, TContext & TReturnType>({
       config: this.config,
-      middlewares: [...this.middlewares, middleware],
+      middlewares: [...this.middlewares, middleware as unknown as AnyMiddleware],
       handleServerError: this.handleServerError,
       validationErrorHandler: this.validationErrorHandler,
       validationAdapter: this.validationAdapter,
@@ -139,7 +146,7 @@ export class RouteHandlerBuilder<
 
         let middlewareContext: TContext = { ...this.baseContext };
         for (const middleware of this.middlewares) {
-          const result = await middleware(request);
+          const result = await middleware(request, middlewareContext);
           if (result instanceof Response) {
             return result;
           }

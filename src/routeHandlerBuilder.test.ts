@@ -340,6 +340,72 @@ describe('middlewares', () => {
     });
   });
 
+  it('should provide accumulated context data to middlewares', async () => {
+    const GET = createSafeRoute({
+      baseContext: {
+        tenantId: 'tenant-1',
+      },
+    })
+      .use((request, data) => {
+        expect(data).toEqual({ tenantId: 'tenant-1' });
+        return { user: { id: 'user-123' } };
+      })
+      .use((request, data) => {
+        expect(data.tenantId).toBe('tenant-1');
+        expect(data.user.id).toBe('user-123');
+        return { requestId: 'req-1' };
+      })
+      .handler((request, context) => {
+        return Response.json(context.data, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({
+      tenantId: 'tenant-1',
+      user: { id: 'user-123' },
+      requestId: 'req-1',
+    });
+  });
+
+  it('should support synchronous middleware return values', async () => {
+    const GET = createSafeRoute()
+      .use(() => ({ feature: 'enabled' }))
+      .use((request, data) => ({ traceId: `${data.feature}-trace` }))
+      .handler((request, context) => {
+        return Response.json(context.data, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ feature: 'enabled', traceId: 'enabled-trace' });
+  });
+
+  it('should stop execution if synchronous middleware returns a Response', async () => {
+    const middleware = () => {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    };
+
+    const GET = createSafeRoute()
+      .use(middleware)
+      .handler(() => {
+        return Response.json({ ok: true }, { status: 200 });
+      });
+
+    const request = new Request('http://localhost/');
+    const response = await GET(request, emptyParamsContext);
+    const data = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(data).toEqual({ error: 'Unauthorized' });
+  });
+
   it('should stop execution if middleware returns a Response', async () => {
     const middleware = async () => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });

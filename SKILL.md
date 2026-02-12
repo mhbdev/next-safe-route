@@ -44,7 +44,7 @@ valibot schemas | `createSafeRoute({ validationAdapter: valibotAdapter() })`
 yup schemas | `createSafeRoute({ validationAdapter: yupAdapter() })`
 Custom schema error payload/status | `validationErrorHandler`
 Custom unexpected-error payload/status | `handleServerError`
-Auth or request-derived shared data | `.use(async (request) => ({ ... }))`
+Auth or request-derived shared data | `.use(async (request, data) => ({ ... }))`
 
 ## Workflow
 
@@ -57,7 +57,7 @@ Auth or request-derived shared data | `.use(async (request) => ({ ... }))`
 
 ## Middleware Writing Notes
 
-- Write middleware as `.use(async (request) => ({ ...contextFields }))`.
+- Write middleware as `.use(async (request, data) => ({ ...contextFields }))`.
 - Return `Response` from middleware to short-circuit the chain (for auth failures or early exits).
 - Return plain serializable objects for context fields; avoid relying on prototype methods.
 - Assume merge order is left-to-right:
@@ -77,7 +77,7 @@ Auth or request-derived shared data | `.use(async (request) => ({ ... }))`
 import { createSafeRoute } from '@mhbdev/next-safe-route';
 
 export const GET = createSafeRoute()
-  .use(async (request) => {
+  .use(async (request, data) => {
     const auth = request.headers.get('authorization');
     if (!auth) {
       return Response.json({ message: 'Unauthorized' }, { status: 401 });
@@ -90,7 +90,7 @@ export const GET = createSafeRoute()
 
     return { user };
   })
-  .use(async () => ({ requestId: crypto.randomUUID() }))
+  .use(async (request, data) => ({ requestId: crypto.randomUUID() }))
   .handler((request, context) => {
     return Response.json({
       requestId: context.data.requestId,

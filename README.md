@@ -71,7 +71,26 @@ To define a route handler in Next.js:
 1. Import `createSafeRoute` and your validation library (e.g., `zod`).
 2. Define validation schemas for params, query, and body as needed.
 3. Use `createSafeRoute()` to create a route handler, chaining `params`, `query`, and `body` methods.
-4. Implement your handler function, accessing validated and type-safe params, query, and body through `context`. Body validation expects `Content-Type: application/json`.
+4. Implement your handler function, accessing validated and type-safe params, query, and body through `context`. Body validation supports `application/json`, `multipart/form-data`, and `application/x-www-form-urlencoded`.
+
+### Middleware context
+
+Middlewares receive both the incoming request and the accumulated `context.data` from `baseContext` and previous middlewares. Middlewares can return either a context object or a `Response` (synchronously or asynchronously) to short-circuit execution.
+
+```ts
+const GET = createSafeRoute({
+  baseContext: { tenantId: 'tenant-1' },
+})
+  .use((request, data) => {
+    if (!request.headers.get('authorization')) {
+      return Response.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+    return { userId: 'user-123', tenantId: data.tenantId };
+  })
+  .handler((request, context) => {
+    return Response.json(context.data);
+  });
+```
 
 ### Using other validation libraries
 
