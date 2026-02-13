@@ -6,7 +6,7 @@
   <a href="https://github.com/richardsolomou/next-safe-route/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/%40mhbdev%2Fnext-safe-route?style=for-the-badge" /></a>
 </p>
 
-`next-safe-route` is a utility library for Next.js that provides type-safety and schema validation for [Route Handlers](https://nextjs.org/docs/app/building-your-application/routing/route-handlers)/API Routes. It is compatible with Next.js 15+ (including 16) route handler signatures.
+`next-safe-route` is a utility library for Next.js that provides type-safety and schema validation for [Route Handlers](https://nextjs.org/docs/app/building-your-application/routing/route-handlers), with an experimental server-actions layer. It is compatible with Next.js 15+ (including 16) route handler signatures.
 
 ## Features
 
@@ -14,6 +14,7 @@
 - **🧷 Type-Safe:** Work with full TypeScript type safety for parameters, query strings, and body content, including transformation results.
 - **🔗 Adapter-Friendly:** Ships with a zod (v4+) adapter by default and lazily loads optional adapters for valibot and yup.
 - **📦 Next-Ready:** Matches the Next.js Route Handler signature (including Next 15/16) and supports middleware-style context extensions.
+- **⚡ Server Actions (Experimental):** Build safe server actions with input/output validation, middleware chaining, and React hooks.
 - **🧪 Fully Tested:** Extensive test suite to ensure everything works reliably.
 
 ## Installation
@@ -30,6 +31,12 @@ npm install valibot
 
 # yup
 npm install yup
+```
+
+If you use the hooks subpath (`@mhbdev/next-safe-route/hooks`), install React in your project:
+
+```sh
+npm install react react-dom
 ```
 
 If an optional adapter is invoked without its peer dependency installed, a clear error message will explain what to install.
@@ -123,6 +130,109 @@ const POST = createSafeRoute({
     return Response.json({ query: context.query, body: context.body });
   });
 ```
+
+## Server Actions (Experimental)
+
+You can build non-throwing typed server actions with `createSafeActionClient`.
+
+```ts
+// safe-action.ts
+import { createSafeActionClient } from '@mhbdev/next-safe-route';
+
+export const actionClient = createSafeActionClient({
+  defaultServerError: 'Something went wrong while executing the action.',
+});
+```
+
+```ts
+// greet-action.ts
+'use server';
+
+import { z } from 'zod';
+import { actionClient } from './safe-action';
+
+export const greetAction = actionClient
+  .inputSchema(
+    z.object({
+      name: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput }) => {
+    return {
+      message: `Hello, ${parsedInput.name}!`,
+    };
+  });
+```
+
+### Action middleware (`next(...)` style)
+
+Action middleware receives `parsedInput`, `ctx`, `metadata`, and `next`.
+
+- Call `next()` to continue.
+- Call `next({ ctx: { ... } })` to merge context for downstream middleware/handler.
+- Return a `SafeActionResult` early to short-circuit.
+- Calling `next()` more than once maps to a safe `serverError`.
+
+```ts
+const action = actionClient
+  .inputSchema(z.object({ amount: z.number() }))
+  .use(async ({ ctx, next }) => {
+    if (!ctx.userId) {
+      return { serverError: 'Unauthorized' };
+    }
+
+    return next({
+      ctx: {
+        requestId: crypto.randomUUID(),
+      },
+    });
+  })
+  .action(async ({ parsedInput, ctx }) => {
+    return {
+      ok: true,
+      amount: parsedInput.amount,
+      requestId: ctx.requestId as string,
+    };
+  });
+```
+
+### Result contract
+
+Actions always resolve to a non-throwing result envelope:
+
+- Success: `{ data }`
+- Input validation failure: `{ validationErrors: { fieldErrors, formErrors } }`
+- Server failure: `{ serverError }`
+
+Validation paths are normalized to dot keys (for example `users.0.name`).
+
+### Hooks (`@mhbdev/next-safe-route/hooks`)
+
+```ts
+'use client';
+
+import { useAction } from '@mhbdev/next-safe-route/hooks';
+import { greetAction } from './greet-action';
+
+export function Greet() {
+  const { execute, result, status, reset } = useAction(greetAction);
+
+  return (
+    <div>
+      <button onClick={() => execute({ name: 'John Doe' })}>Run</button>
+      <button onClick={reset}>Reset</button>
+      <pre>{JSON.stringify({ status, result }, null, 2)}</pre>
+    </div>
+  );
+}
+```
+
+Additional hooks:
+
+- `useOptimisticAction(action, { initialState, updateFn, preserveOnError? })`
+- `useStateAction(action, { initialState, mapFormData?, onSuccess?, onValidationError?, onServerError? })`
+
+`useStateAction` includes `formAction(formData)` for direct `<form action={formAction}>` usage.
 
 ### Using other validation libraries
 

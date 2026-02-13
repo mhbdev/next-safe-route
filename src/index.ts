@@ -1,5 +1,7 @@
 export { createSafeRoute } from './createSafeRoute';
+export { createSafeActionClient } from './createSafeActionClient';
 export { RouteHandlerBuilder } from './routeHandlerBuilder';
+export { SafeActionBuilder } from './safeActionBuilder';
 export {
   type BodyFallbackStrategy,
   type BodyParserOptions,
@@ -16,6 +18,21 @@ export {
   type ValueCoercionFn,
   type ValueCoercionMode,
 } from './types';
+export {
+  type InferActionInput,
+  type InferParsedActionInput,
+  type SafeActionBuilderConfig,
+  type SafeActionClientOptions,
+  type SafeActionFn,
+  type SafeActionHandler,
+  type SafeActionMiddleware,
+  type SafeActionMiddlewareNext,
+  type SafeActionResult,
+  type SafeActionServerErrorResult,
+  type SafeActionSuccessResult,
+  type SafeActionValidationErrorResult,
+  type SafeActionValidationErrors,
+} from './safeActionTypes';
 export {
   type IfInstalled,
   type Infer,
